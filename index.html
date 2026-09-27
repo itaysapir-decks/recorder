@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>הקלטת לחיצות</title>
+<!-- Push-to-talk recorder for the voice test (27 Sep 2026; phones and a link, 27 Sep evening).
+     One press = one WAV file, 16 kHz mono 16-bit, named <name>_<condition>_s<NN>_t<take>.wav.
+     Every take is kept in the browser (IndexedDB) until "שליחה לאיתי" packs them into one
+     <name>_<condition>.zip with a log, to send on WhatsApp; on a computer a folder can also be chosen.
+     The situations and the answer key are in situations.js; press_test.py scores the presses.
+     ?selftest uses a tone instead of the mic. -->
+<style>
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e2e0da;
+  --accent: #1f6feb; --rec: #d92d20; --ok: #1a7f37; --chip: #efeee9;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151514; --card: #1f1f1d; --ink: #ecebe7; --muted: #a3a29d; --line: #34332f;
+          --accent: #5b9bff; --rec: #ff5a4e; --ok: #4cc26a; --chip: #2a2a27; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+       font: 17px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
+main { max-width: 760px; margin: 0 auto; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+h1 { font-size: 22px; margin: 4px 0 12px; text-wrap: balance; }
+p { margin: 0 0 8px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+details summary { cursor: pointer; font-weight: 600; }
+ol { margin: 8px 0 0; padding-inline-start: 22px; }
+ol li { margin-bottom: 6px; }
+.example { background: var(--chip); border-radius: 8px; padding: 8px 10px; margin-top: 6px; font-size: 15px; }
+.privacy { color: var(--muted); font-size: 14px; margin-top: 10px; }
+a { color: var(--accent); overflow-wrap: anywhere; }
+.row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+input, select, button { font: inherit; color: var(--ink); }
+input, select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 150px; max-width: 100%; }
+button { background: var(--chip); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.status { font-size: 14px; color: var(--muted); margin-top: 8px; }
+.top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.num { font-weight: 700; }
+.kind { background: var(--chip); border-radius: 999px; padding: 2px 12px; font-size: 14px; white-space: nowrap; }
+.kind.allergy { background: var(--rec); color: #fff; }
+.pass { margin: 12px 0 4px; font-size: 15px; color: var(--muted); }
+.pass b { color: var(--ink); font-weight: 600; }
+.say { font-size: 24px; line-height: 1.4; font-weight: 600; margin: 8px 0 6px; }
+.hint { color: var(--muted); font-size: 15px; }
+.ptt-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; margin: 18px 0 8px; }
+#ptt { width: 180px; height: 180px; border-radius: 50%; border: none; background: var(--accent); color: #fff;
+       font-size: 22px; font-weight: 700; touch-action: none; user-select: none; -webkit-user-select: none;
+       -webkit-touch-callout: none; box-shadow: 0 6px 18px rgba(0,0,0,.18); }
+#ptt.on { background: var(--rec); transform: scale(.97); }
+.meter { width: 220px; max-width: 100%; height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--ok); }
+#timer { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.5em; }
+.saved { color: var(--ok); font-size: 15px; min-height: 1.5em; text-align: center; overflow-wrap: anywhere; }
+.saved.err { color: var(--rec); }
+audio { width: 100%; margin-top: 6px; }
+.nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.dots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+.dots span { width: 26px; height: 26px; border-radius: 50%; background: var(--chip); font-size: 12px;
+             display: grid; place-items: center; cursor: pointer; }
+.dots span.done { background: var(--ok); color: #fff; }
+.dots span.cur { outline: 2px solid var(--accent); }
+#send { width: 100%; padding: 12px; font-size: 18px; font-weight: 700; }
+#sendStatus { margin-top: 8px; }
+@media (prefers-reduced-motion: reduce) { #ptt.on { transform: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>הקלטות לבדיקת קול במטבח</h1>
+
+  <details class="card" id="about" open>
+    <summary>מה זה ואיך מקליטים (דקה לקרוא)</summary>
+    <p style="margin-top:8px">אני בונה מערכת למטבחים של מסעדות. כשמנה מוכנה, הטבח לוחץ על כפתור, אומר למיקרופון מה מיוחד בה ("השמאלית בלי אגוזים"), ועוזב. אני צריך קולות של אנשים שונים כדי לבדוק שהמערכת מבינה. יש כאן 30 מצבים קצרים, בערך עשר דקות.</p>
+    <ol>
+      <li>כותבים שם <b>באנגלית</b> (למשל dana) ובוחרים איפה אתם: <b>בשקט</b> או <b>במקום רועש</b>.</li>
+      <li>לוחצים <b>התחל</b> ומאשרים את המיקרופון. מחזיקים את הטלפון בערך 20 ס״מ מהפה.</li>
+      <li>בכל מצב: קוראים אותו <b>בראש, לא בקול</b>. אחר כך <b>לוחצים ומחזיקים</b> את הכפתור הכחול, אומרים מה הטבח היה אומר, קצר ובמילים שלכם, ו<b>עוזבים</b>.
+        <div class="example">דוגמה: המצב הוא "שתי פיצות. בימנית אין בצל". לא מקריאים אותו. אומרים משהו כמו "הימנית בלי בצל".</div>
+      </li>
+      <li>במצב שיש בו הוראה ("תתחילו להגיד... ותתקנו") עושים את מה שכתוב, בלי להקריא את ההוראה.</li>
+      <li>אפשר להקשיב ולהקליט שוב. בסוף לוחצים <b>שליחה לאיתי</b>.</li>
+      <li>אם אפשר, עושים סבב שני במקום השני: פעם בשקט, ופעם במקום רועש שיש בו אנשים שמדברים (בית קפה, ארוחה משפחתית). אין מקום כזה? אפשר להפעיל מטלפון אחר <a href="https://www.youtube.com/watch?v=OGqXcGXbXIU" target="_blank" rel="noopener">סרטון של מטבח עמוס</a>, במרחק מטר בערך.</li>
+    </ol>
+    <p class="privacy">ההקלטות נשמרות רק אצלכם, עד שאתם שולחים אותן לאיתי. הן משמשות רק לבדיקה הזאת, לא עוברות לאף אחד ולא מתפרסמות. רוצים שאמחק אותן? רק תגידו.</p>
+  </details>
+
+  <section class="card" id="setup">
+    <div class="row">
+      <label for="speaker">שם באנגלית<input id="speaker" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="dana" dir="ltr"></label>
+      <label for="cond">איפה אתם
+        <select id="cond"><option value="quiet">בשקט</option><option value="noise">במקום רועש</option></select>
+      </label>
+      <label for="mic">מיקרופון<select id="mic"><option value="">ברירת המחדל</option></select></label>
+      <button id="pick" hidden>שמירה גם לתיקייה (מחשב)</button>
+      <button id="start" class="primary">התחל</button>
+    </div>
+    <div class="status" id="setupStatus"></div>
+  </section>
+
+  <section class="card" id="stage" hidden>
+    <div class="top">
+      <div><span class="num" id="num"></span> <span class="hint" id="progress"></span></div>
+      <span class="kind" id="kind"></span>
+    </div>
+    <div class="pass" id="pass"></div>
+    <div class="say" id="say"></div>
+    <div class="hint">קוראים בראש, ואומרים במילים שלכם.</div>
+
+    <div class="ptt-wrap">
+      <button id="ptt" aria-label="לחצו והחזיקו כדי לדבר">לחצו<br>והחזיקו</button>
+      <div class="meter"><i id="level"></i></div>
+      <div id="timer"></div>
+      <div class="saved" id="saved"></div>
+    </div>
+    <audio id="play" controls hidden></audio>
+
+    <div class="nav">
+      <button id="prev">› הקודם</button>
+      <button id="next" class="primary">הבא ‹</button>
+    </div>
+    <div class="dots" id="dots"></div>
+  </section>
+
+  <section class="card" id="sendCard" hidden>
+    <button id="send" class="primary">שליחה לאיתי</button>
+    <div class="status" id="sendStatus"></div>
+  </section>
+</main>
+
+<script src="situations.js"></script>
+<script>
+"use strict";
+const SELFTEST = new URLSearchParams(location.search).has("selftest");
+const KIND = { short: "קצר", position: "מיקום", allergy: "אלרגיה", two: "שני שינויים", correction: "תיקון",
+               nickname: "כינוי", multi: "כמה מנות", nothing: "בלי שינוי" };
+const $ = id => document.getElementById(id);
+const S = window.SITUATIONS;
+
+let root = null, folder = null;          // on a computer: the chosen folder and the person's sub-folder
+let ctx = null, grabbing = false, chunks = [], t0 = 0, tick = null, lastUrl = null;
+let idx = 0, takes = [];                  // takes: this person and condition, {file, n, kind, take, seconds, at, blob}
+
+const store = {                           // per-browser conveniences only; the page works without them
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const speaker = () => $("speaker").value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+const cond = () => $("cond").value;
+const setStatus = (text, el = "setupStatus") => { $(el).textContent = text; };
+const doneCount = n => takes.filter(t => t.n === n).length;
+
+// ---- every take is kept in the browser until it is sent (IndexedDB; in memory if that fails) --------
+const idb = (() => {
+  let opened = null;
+  const open = () => opened || (opened = new Promise((ok, fail) => {
+    const r = indexedDB.open("checker-rec", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("takes", { keyPath: "file" });
+    r.onsuccess = () => ok(r.result); r.onerror = () => fail(r.error);
+  }));
+  const run = async (mode, fn) => {
+    const db = await open();
+    return new Promise((ok, fail) => {
+      const tx = db.transaction("takes", mode), req = fn(tx.objectStore("takes"));
+      tx.oncomplete = () => ok(req.result); tx.onerror = () => fail(tx.error);
+    });
+  };
+  return { put: rec => run("readwrite", s => s.put(rec)), all: () => run("readonly", s => s.getAll()) };
+})();
+
+// ---- setup -------------------------------------------------------------------------------------
+$("speaker").value = store.get("checker-rec:last") || "";
+if (window.showDirectoryPicker) $("pick").hidden = false;
+$("pick").onclick = async () => {
+  try {
+    root = await window.showDirectoryPicker({ id: "checker-rec", mode: "readwrite" });
+    setStatus(`גם לתיקייה: ${root.name}`);
+  } catch { /* cancelled */ }
+};
+
+async function listMics() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audioinput");
+  const sel = $("mic"), cur = sel.value;
+  sel.innerHTML = '<option value="">ברירת המחדל</option>';
+  for (const d of devs) sel.add(new Option(d.label || "מיקרופון", d.deviceId));
+  sel.value = cur;
+}
+
+$("start").onclick = async () => {
+  if (!speaker()) { setStatus("צריך שם באנגלית: אותיות, ספרות, _ או -."); return; }
+  store.set("checker-rec:last", speaker());
+  try { await openAudio(); } catch (e) { setStatus("אין גישה למיקרופון. צריך לאשר אותו בדפדפן ולנסות שוב. (" + e.message + ")"); return; }
+  if (root) folder = await root.getDirectoryHandle(speaker(), { create: true });
+  try {
+    takes = (await idb.all()).filter(t => t.speaker === speaker() && t.cond === cond()).sort((a, b) => a.at < b.at ? -1 : 1);
+  } catch { takes = []; }
+  idx = Math.min(store.get(`checker-rec:${speaker()}:${cond()}`) || 0, S.length - 1);
+  $("setup").querySelectorAll("input, select, button").forEach(el => el.disabled = true);
+  $("about").open = false;
+  setStatus(`${speaker()} · ${cond() === "noise" ? "במקום רועש" : "בשקט"} · ${micLabel()}` + (SELFTEST ? " · בדיקה עצמית, בלי מיקרופון" : ""));
+  $("stage").hidden = false;
+  show();
+};
+
+let micTrack = null;
+const micLabel = () => SELFTEST ? "צליל בדיקה" : (micTrack && micTrack.label) || "מיקרופון";
+
+async function openAudio() {
+  ctx = new AudioContext();
+  let src;
+  if (SELFTEST) {
+    const osc = new OscillatorNode(ctx, { frequency: 440 }), g = new GainNode(ctx, { gain: 0.2 });
+    osc.connect(g); osc.start(); src = g;
+  } else {
+    const id = $("mic").value;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      deviceId: id ? { exact: id } : undefined, channelCount: 1,
+      echoCancellation: false, noiseSuppression: false, autoGainControl: false } });   // raw, like a pass mic
+    micTrack = stream.getAudioTracks()[0];
+    src = ctx.createMediaStreamSource(stream);
+    listMics();
+  }
+  const code = `registerProcessor("grab", class extends AudioWorkletProcessor {
+    process(inputs) { const c = inputs[0] && inputs[0][0]; if (c) this.port.postMessage(c.slice(0)); return true; } });`;
+  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "application/javascript" })));
+  const node = new AudioWorkletNode(ctx, "grab");
+  node.port.onmessage = e => {
+    if (!grabbing) return;
+    chunks.push(e.data);                                   // only while the button is held: push-to-talk
+    let peak = 0; for (const v of e.data) peak = Math.max(peak, Math.abs(v));
+    $("level").style.width = Math.min(100, peak * 140) + "%";
+  };
+  src.connect(node); node.connect(new GainNode(ctx, { gain: 0 })).connect(ctx.destination);
+}
+
+// ---- the situation on screen ---------------------------------------------------------------------
+function show() {
+  const s = S[idx], n = doneCount(s.n), recorded = S.filter(x => doneCount(x.n)).length;
+  $("num").textContent = `מצב ${s.n} מתוך ${S.length}`;
+  $("progress").textContent = `· הוקלטו ${recorded}`;
+  $("kind").textContent = KIND[s.kind] || s.kind;
+  $("kind").className = "kind" + (s.kind === "allergy" ? " allergy" : "");
+  $("pass").innerHTML = "";
+  $("pass").append("על הפס: ");
+  s.pass.forEach((p, i) => {
+    if (i) $("pass").append(" · ");
+    const b = document.createElement("b"); b.textContent = (p.plates > 1 ? p.plates + " × " : "") + p.dish; $("pass").append(b);
+  });
+  $("say").textContent = s.say;
+  $("saved").textContent = n ? `כבר הוקלט${n > 1 ? ` (${n} פעמים)` : ""}. אפשר להקליט שוב או לעבור הלאה.` : "";
+  $("saved").className = "saved";
+  $("play").hidden = true;
+  $("prev").disabled = idx === 0; $("next").textContent = idx === S.length - 1 ? "סיום" : "הבא ‹";
+  $("dots").innerHTML = "";
+  S.forEach((x, i) => {
+    const d = document.createElement("span");
+    d.className = (doneCount(x.n) ? "done " : "") + (i === idx ? "cur" : ""); d.dataset.i = i; d.textContent = x.n;
+    $("dots").append(d);
+  });
+  $("sendCard").hidden = !takes.length;
+  $("send").textContent = `שליחה לאיתי · ${recorded} מתוך ${S.length}`;
+  store.set(`checker-rec:${speaker()}:${cond()}`, idx);
+}
+$("dots").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i !== undefined && !grabbing) { idx = +i; show(); } };
+$("prev").onclick = () => { if (idx > 0) { idx--; show(); } };
+$("next").onclick = () => {
+  if (idx < S.length - 1) { idx++; show(); return; }
+  const left = S.filter(s => !doneCount(s.n)).map(s => s.n);
+  $("saved").textContent = left.length ? `חסרים עוד: ${left.join(", ")}` : "סיימתם את כל 30 המצבים. תודה! עכשיו לוחצים שליחה לאיתי.";
+  $("saved").className = "saved" + (left.length ? " err" : "");
+};
+
+// ---- push-to-talk --------------------------------------------------------------------------------
+let stopping = false;                      // pointerup and lostpointercapture both fire: save once
+function press() {
+  if (grabbing || stopping || !ctx) return;
+  ctx.resume();
+  chunks = []; grabbing = true; t0 = performance.now();
+  $("ptt").classList.add("on"); $("saved").textContent = "";
+  tick = setInterval(() => $("timer").textContent = ((performance.now() - t0) / 1000).toFixed(1) + " שנ׳", 100);
+}
+async function release() {
+  if (!grabbing || stopping) return;
+  stopping = true;
+  await new Promise(r => setTimeout(r, 60));               // let the last frames already in flight arrive
+  grabbing = false; clearInterval(tick);
+  $("ptt").classList.remove("on"); $("level").style.width = "0";
+  const s = S[idx];
+  try {
+    const wav = await toWav16k(chunks, ctx.sampleRate);
+    const seconds = (wav.size - 44) / 32000;
+    const take = await freeTake(s.n);
+    const file = `${speaker()}_${cond()}_s${String(s.n).padStart(2, "0")}_t${take}.wav`;
+    const rec = { file, speaker: speaker(), cond: cond(), n: s.n, kind: s.kind, take,
+                  seconds: +seconds.toFixed(2), at: new Date().toISOString(), blob: wav };
+    takes.push(rec);
+    let kept = true;
+    try { await idb.put(rec); } catch { kept = false; }
+    if (folder) {
+      await writeFile(file, wav);
+      await writeFile(`${speaker()}_${cond()}_log.json`, logBlob());
+    }
+    show();
+    $("saved").textContent = `נשמר · ${seconds.toFixed(1)} שנ׳` + (kept ? "" : " · לא לסגור את הדף לפני השליחה");
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(wav); $("play").src = lastUrl; $("play").hidden = false;
+  } catch (e) {
+    $("saved").textContent = "השמירה נכשלה: " + e.message; $("saved").className = "saved err";
+  }
+  $("timer").textContent = "";
+  stopping = false;
+}
+const ptt = $("ptt");
+ptt.addEventListener("pointerdown", e => { ptt.setPointerCapture(e.pointerId); press(); });
+["pointerup", "pointercancel", "lostpointercapture"].forEach(t => ptt.addEventListener(t, release));
+ptt.addEventListener("contextmenu", e => e.preventDefault());
+document.addEventListener("keydown", e => {
+  if (e.code !== "Space" || (e.target.matches && e.target.matches("input, select")) || $("stage").hidden) return;
+  e.preventDefault(); if (!e.repeat) press();
+});
+document.addEventListener("keyup", e => { if (e.code === "Space" && !$("stage").hidden) { e.preventDefault(); release(); } });
+
+// ---- files ---------------------------------------------------------------------------------------
+async function freeTake(n) {               // never overwrite: the next take number not used here or in the folder
+  let t = 1 + Math.max(0, ...takes.filter(x => x.n === n).map(x => x.take));
+  if (folder) {
+    for (; ; t++) {
+      try { await folder.getFileHandle(`${speaker()}_${cond()}_s${String(n).padStart(2, "0")}_t${t}.wav`); }
+      catch { break; }
+    }
+  }
+  return t;
+}
+async function writeFile(name, blob) {
+  const w = await (await folder.getFileHandle(name, { create: true })).createWritable();
+  await w.write(blob); await w.close();
+}
+function logBlob() {
+  const log = { speaker: speaker(), condition: cond(), mic: micLabel(), browser: navigator.userAgent,
+                takes: takes.map(({ blob, speaker, cond, ...t }) => t) };
+  return new Blob([JSON.stringify(log, null, 1)], { type: "application/json" });
+}
+
+// ---- sending: one .zip with every take and the log -----------------------------------------------
+$("send").onclick = async () => {
+  const name = `${speaker()}_${cond()}.zip`;
+  const zip = new File([await makeZip([...takes.map(t => ({ name: t.file, blob: t.blob })),
+                                       { name: `${speaker()}_${cond()}_log.json`, blob: logBlob() }])],
+                       name, { type: "application/zip" });
+  const kb = Math.round(zip.size / 1024);
+  if (navigator.canShare && navigator.canShare({ files: [zip] })) {
+    try {
+      await navigator.share({ files: [zip], title: name });
+      setStatus(`אם בחרתם בוואטסאפ ושלחתם לאיתי, סיימתם. תודה! (${name}, ${kb}KB)`, "sendStatus");
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") { setStatus("השליחה בוטלה. אפשר ללחוץ שוב.", "sendStatus"); return; }
+    }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(zip); a.download = name; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  setStatus(`הקובץ ${name} (${kb}KB) ירד לתיקיית ההורדות. בוואטסאפ, בצ'אט עם איתי: מהדק ← מסמך ← בוחרים את הקובץ ← שליחה.`, "sendStatus");
+};
+
+const CRC = new Uint32Array(256).map((_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c; });
+function crc32(bytes) { let c = ~0; for (const b of bytes) c = CRC[(c ^ b) & 255] ^ (c >>> 8); return ~c >>> 0; }
+async function makeZip(entries) {          // [{name, blob}] -> a .zip Blob, stored without compression
+  const enc = new TextEncoder(), local = [], central = [];
+  let offset = 0;
+  for (const e of entries) {
+    const data = new Uint8Array(await e.blob.arrayBuffer()), name = enc.encode(e.name), crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30)), c = new DataView(new ArrayBuffer(46));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(12, 0x21, true);   // 1 Jan 1980
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true);
+    h.setUint16(26, name.length, true);
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(14, 0x21, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true);
+    c.setUint16(28, name.length, true); c.setUint32(42, offset, true);
+    local.push(h, name, data); central.push(c, name);
+    offset += 30 + name.length + data.length;
+  }
+  const size = central.reduce((a, p) => a + p.byteLength, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, size, true); end.setUint32(16, offset, true);
+  return new Blob([...local, ...central, end], { type: "application/zip" });
+}
+
+// 16 kHz, mono, 16-bit PCM WAV: what the speech model and press_test.py read.
+async function toWav16k(parts, rate) {
+  const len = parts.reduce((a, c) => a + c.length, 0);
+  let pcm = new Float32Array(0);
+  if (len) {
+    const buf = new AudioBuffer({ length: len, numberOfChannels: 1, sampleRate: rate });
+    const ch = buf.getChannelData(0); let off = 0;
+    for (const c of parts) { ch.set(c, off); off += c.length; }
+    const oac = new OfflineAudioContext(1, Math.max(1, Math.ceil(len * 16000 / rate)), 16000);
+    const src = new AudioBufferSourceNode(oac, { buffer: buf }); src.connect(oac.destination); src.start();
+    pcm = (await oac.startRendering()).getChannelData(0);
+  }
+  const v = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + pcm.length * 2, true); str(8, "WAVE"); str(12, "fmt ");
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 16000, true); v.setUint32(28, 32000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) {
+    const x = Math.max(-1, Math.min(1, pcm[i])); v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([v.buffer], { type: "audio/wav" });
+}
+</script>
+</body>
+</html>
