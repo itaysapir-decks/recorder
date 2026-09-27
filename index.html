@@ -20,6 +20,7 @@
           --accent: #5b9bff; --rec: #ff5a4e; --ok: #4cc26a; --chip: #2a2a27; color-scheme: dark; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink);
        font: 17px/1.5 system-ui, "Segoe UI", Arial, sans-serif; }
 main { max-width: 760px; margin: 0 auto; padding: 16px; padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
@@ -97,7 +98,7 @@ audio { width: 100%; margin-top: 6px; }
       <label for="cond">איפה אתם
         <select id="cond"><option value="quiet">בשקט</option><option value="noise">במקום רועש</option></select>
       </label>
-      <label for="mic">מיקרופון<select id="mic"><option value="">ברירת המחדל</option></select></label>
+      <label for="mic" id="micBox">מיקרופון<select id="mic"><option value="">ברירת המחדל</option></select></label>
       <button id="pick" hidden>שמירה גם לתיקייה (מחשב)</button>
       <button id="start" class="primary">התחל</button>
     </div>
@@ -177,6 +178,7 @@ const idb = (() => {
 // ---- setup -------------------------------------------------------------------------------------
 $("speaker").value = store.get("checker-rec:last") || "";
 if (window.showDirectoryPicker) $("pick").hidden = false;
+if (matchMedia("(pointer: coarse)").matches) $("micBox").hidden = true;   // a phone: its own mic, nothing to choose
 $("pick").onclick = async () => {
   try {
     root = await window.showDirectoryPicker({ id: "checker-rec", mode: "readwrite" });
