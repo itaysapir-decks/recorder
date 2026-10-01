@@ -58,9 +58,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .meter { width: 220px; max-width: 100%; height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
 .meter i { display: block; height: 100%; width: 0; background: var(--ok); }
 #timer { font-variant-numeric: tabular-nums; color: var(--muted); min-height: 1.5em; }
-.saved { color: var(--ok); font-size: 15px; min-height: 1.5em; text-align: center; overflow-wrap: anywhere; }
+.saved { color: var(--ok); font-size: 15px; min-height: 3em; text-align: center; overflow-wrap: anywhere; }
 .saved.err { color: var(--rec); }
 audio { width: 100%; margin-top: 6px; }
+#play.off { visibility: hidden; }   /* keeps its space: the buttons below never move */
 .nav { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .dots { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
 .dots span { width: 26px; height: 26px; border-radius: 50%; background: var(--chip); font-size: 12px;
@@ -86,7 +87,7 @@ audio { width: 100%; margin-top: 6px; }
         <div class="example">דוגמה: המצב הוא "שתי פיצות. בימנית אין בצל". לא מקריאים אותו. אומרים משהו כמו "הימנית בלי בצל".</div>
       </li>
       <li>במצב שיש בו הוראה ("תתחילו להגיד... ותתקנו") עושים את מה שכתוב, בלי להקריא את ההוראה.</li>
-      <li>אפשר להקשיב ולהקליט שוב. בסוף לוחצים <b>שליחה לאיתי</b>.</li>
+      <li>אחרי כל הקלטה הדף עובר לבד למצב הבא. להקשיב או להקליט שוב: חוזרים עם <b>הקודם</b>. בסוף לוחצים <b>שליחה לאיתי</b>.</li>
       <li>אם אפשר, עושים סבב שני במקום השני: פעם בשקט, ופעם במקום רועש שיש בו אנשים שמדברים (בית קפה, ארוחה משפחתית). אין מקום כזה? אפשר להפעיל מטלפון אחר <a href="https://www.youtube.com/watch?v=OGqXcGXbXIU" target="_blank" rel="noopener">סרטון של מטבח עמוס</a>, במרחק מטר בערך.</li>
     </ol>
     <p class="privacy">ההקלטות נשמרות רק אצלכם, עד שאתם שולחים אותן לאיתי. הן משמשות רק לבדיקה הזאת, לא עוברות לאף אחד ולא מתפרסמות. רוצים שאמחק אותן? רק תגידו.</p>
@@ -120,7 +121,7 @@ audio { width: 100%; margin-top: 6px; }
       <div id="timer"></div>
       <div class="saved" id="saved"></div>
     </div>
-    <audio id="play" controls hidden></audio>
+    <audio id="play" class="off" controls></audio>
 
     <div class="nav">
       <button id="prev">› הקודם</button>
@@ -207,8 +208,13 @@ $("start").onclick = async () => {
   $("about").open = false;
   setStatus(`${speaker()} · ${cond() === "noise" ? "במקום רועש" : "בשקט"} · ${micLabel()}` + (SELFTEST ? " · בדיקה עצמית, בלי מיקרופון" : ""));
   $("stage").hidden = false;
+  keepAwake();
   show();
 };
+
+let wake = null;                          // the screen stays on while recording (where the browser allows it)
+async function keepAwake() { try { wake = await navigator.wakeLock.request("screen"); } catch { wake = null; } }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && !$("stage").hidden) keepAwake(); });
 
 let micTrack = null;
 const micLabel = () => SELFTEST ? "צליל בדיקה" : (micTrack && micTrack.label) || "מיקרופון";
@@ -257,7 +263,11 @@ function show() {
   $("say").textContent = s.say;
   $("saved").textContent = n ? `כבר הוקלט${n > 1 ? ` (${n} פעמים)` : ""}. אפשר להקליט שוב או לעבור הלאה.` : "";
   $("saved").className = "saved";
-  $("play").hidden = true;
+  const mine = takes.filter(t => t.n === s.n);            // the last take of this situation, to listen to
+  if (lastUrl) URL.revokeObjectURL(lastUrl);
+  lastUrl = mine.length ? URL.createObjectURL(mine[mine.length - 1].blob) : null;
+  if (lastUrl) $("play").src = lastUrl; else $("play").removeAttribute("src");
+  $("play").classList.toggle("off", !lastUrl);
   $("prev").disabled = idx === 0; $("next").textContent = idx === S.length - 1 ? "סיום" : "הבא ‹";
   $("dots").innerHTML = "";
   S.forEach((x, i) => {
@@ -293,7 +303,7 @@ async function release() {
   await new Promise(r => setTimeout(r, 60));               // let the last frames already in flight arrive
   grabbing = false; clearInterval(tick);
   $("ptt").classList.remove("on"); $("level").style.width = "0";
-  const s = S[idx];
+  const s = S[idx], at = idx;
   try {
     const wav = await toWav16k(chunks, ctx.sampleRate);
     const seconds = (wav.size - 44) / 32000;
@@ -308,10 +318,15 @@ async function release() {
       await writeFile(file, wav);
       await writeFile(`${speaker()}_${cond()}_log.json`, logBlob());
     }
+    // over a second: straight on to the next situation (Itay, 1 Oct); shorter: stay, it may be a slip
+    const advance = seconds > 1 && idx === at && idx < S.length - 1;
+    if (advance) idx++;
     show();
-    $("saved").textContent = `נשמר · ${seconds.toFixed(1)} שנ׳` + (kept ? "" : " · לא לסגור את הדף לפני השליחה");
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
-    lastUrl = URL.createObjectURL(wav); $("play").src = lastUrl; $("play").hidden = false;
+    const allDone = S.every(x => doneCount(x.n));
+    $("saved").textContent = (advance ? `✓ מצב ${s.n} נשמר · ${seconds.toFixed(1)} שנ׳. להקליט אותו שוב: הקודם`
+      : allDone ? "סיימתם את כל 30 המצבים. תודה! עכשיו לוחצים שליחה לאיתי."
+      : `נשמר · ${seconds.toFixed(1)} שנ׳` + (seconds <= 1 ? " · קצר מאוד, אפשר להקליט שוב" : ""))
+      + (kept ? "" : " · לא לסגור את הדף לפני השליחה");
   } catch (e) {
     $("saved").textContent = "השמירה נכשלה: " + e.message; $("saved").className = "saved err";
   }
