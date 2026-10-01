@@ -68,6 +68,8 @@ audio { width: 100%; margin-top: 6px; }
              display: grid; place-items: center; cursor: pointer; }
 .dots span.done { background: var(--ok); color: #fff; }
 .dots span.cur { outline: 2px solid var(--accent); }
+#sendCard { position: sticky; bottom: 0; z-index: 2; margin-bottom: 0;
+            padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -4px 14px rgba(0,0,0,.08); }
 #send { width: 100%; padding: 12px; font-size: 18px; font-weight: 700; }
 #sendStatus { margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { #ptt.on { transform: none; } }
@@ -87,7 +89,7 @@ audio { width: 100%; margin-top: 6px; }
         <div class="example">דוגמה: המצב הוא "שתי פיצות. בימנית אין בצל". לא מקריאים אותו. אומרים משהו כמו "הימנית בלי בצל".</div>
       </li>
       <li>במצב שיש בו הוראה ("תתחילו להגיד... ותתקנו") עושים את מה שכתוב, בלי להקריא את ההוראה.</li>
-      <li>אחרי כל הקלטה הדף עובר לבד למצב הבא. להקשיב או להקליט שוב: חוזרים עם <b>הקודם</b>. בסוף לוחצים <b>שליחה לאיתי</b>.</li>
+      <li>אחרי כל הקלטה הדף עובר לבד למצב הבא. להקשיב או להקליט שוב: חוזרים עם <b>הקודם</b>. בסוף לוחצים <b>שליחה לאיתי</b>, למטה. אפשר לעצור באמצע ולשלוח את מה שהוקלט.</li>
       <li>אם אפשר, עושים סבב שני במקום השני: פעם בשקט, ופעם במקום רועש שיש בו אנשים שמדברים (בית קפה, ארוחה משפחתית). אין מקום כזה? אפשר להפעיל מטלפון אחר <a href="https://www.youtube.com/watch?v=OGqXcGXbXIU" target="_blank" rel="noopener">סרטון של מטבח עמוס</a>, במרחק מטר בערך.</li>
     </ol>
     <p class="privacy">ההקלטות נשמרות רק אצלכם, עד שאתם שולחים אותן לאיתי. הן משמשות רק לבדיקה הזאת, לא עוברות לאף אחד ולא מתפרסמות. רוצים שאמחק אותן? רק תגידו.</p>
@@ -275,7 +277,8 @@ function show() {
     d.className = (doneCount(x.n) ? "done " : "") + (i === idx ? "cur" : ""); d.dataset.i = i; d.textContent = x.n;
     $("dots").append(d);
   });
-  $("sendCard").hidden = !takes.length;
+  $("sendCard").hidden = false;                           // always in view: stopping half way and sending is fine
+  $("send").disabled = !takes.length;
   $("send").textContent = `שליחה לאיתי · ${recorded} מתוך ${S.length}`;
   store.set(`checker-rec:${speaker()}:${cond()}`, idx);
 }
