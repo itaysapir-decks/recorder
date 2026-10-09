@@ -1,4 +1,4 @@
-// The 30 presses to record, and the answer key the test scores against (27 Sep 2026).
+// The 34 presses to record, and the answer key the test scores against (27 Sep 2026; 31-34 added 9 Oct from Vinny's real tickets).
 // The list below is pure JSON, so press_test.py reads it with json.loads.
 window.SITUATIONS = [
  {
@@ -712,5 +712,92 @@ window.SITUATIONS = [
    }
   ],
   "expected": []
+ },
+ {
+  "n": 31,
+  "kind": "real",
+  "say": "נתח בטטה בטאבון. הלקוח ביקש טחינה במקום שמנת חמוצה.",
+  "pass": [
+   {
+    "dish": "נתח בטטה בטאבון",
+    "plates": 1,
+    "open": [
+     "טחינה במקום שמנת חמוצה",
+     "חריף בצד"
+    ]
+   }
+  ],
+  "expected": [
+   {
+    "dish": "נתח בטטה בטאבון",
+    "pos": null,
+    "change": "טחינה במקום שמנת חמוצה"
+   }
+  ]
+ },
+ {
+  "n": 32,
+  "kind": "real",
+  "say": "פיצה מרגריטה, עם בצל.",
+  "pass": [
+   {
+    "dish": "פיצה מרגריטה",
+    "plates": 1,
+    "open": [
+     "עם בצל",
+     "בסיס טבעוני"
+    ]
+   }
+  ],
+  "expected": [
+   {
+    "dish": "פיצה מרגריטה",
+    "pos": null,
+    "change": "עם בצל"
+   }
+  ]
+ },
+ {
+  "n": 33,
+  "kind": "real",
+  "say": "סלט פנצנלה עם בוראטה. זיתי קלמטה בצד.",
+  "pass": [
+   {
+    "dish": "סלט פנצנלה עם בוראטה",
+    "plates": 1,
+    "open": [
+     "זיתי קלמטה בצד",
+     "בלי בוראטה"
+    ]
+   }
+  ],
+  "expected": [
+   {
+    "dish": "סלט פנצנלה עם בוראטה",
+    "pos": null,
+    "change": "זיתי קלמטה בצד"
+   }
+  ]
+ },
+ {
+  "n": 34,
+  "kind": "real",
+  "say": "שני סלטי פרימוורה. בשמאלי מלפפון במקום שרי.",
+  "pass": [
+   {
+    "dish": "סלט פרימוורה",
+    "plates": 2,
+    "open": [
+     "מלפפון במקום שרי"
+    ]
+   }
+  ],
+  "expected": [
+   {
+    "dish": "סלט פרימוורה",
+    "pos": "left",
+    "change": "מלפפון במקום שרי"
+   }
+  ]
  }
 ];
