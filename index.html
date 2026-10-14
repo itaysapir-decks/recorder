@@ -81,7 +81,7 @@ audio { width: 100%; margin-top: 6px; }
 
   <details class="card" id="about" open>
     <summary>מה זה ואיך מקליטים (דקה לקרוא)</summary>
-    <p style="margin-top:8px">אני בונה מערכת למטבחים של מסעדות. כשמנה מוכנה, הטבח לוחץ על כפתור, אומר למיקרופון מה מיוחד בה ("השמאלית בלי אגוזים"), ועוזב. אני צריך קולות של אנשים שונים כדי לבדוק שהמערכת מבינה. יש כאן 34 מצבים קצרים, בערך עשר דקות.</p>
+    <p style="margin-top:8px">אני בונה מערכת למטבחים של מסעדות. כשמנה מוכנה, הטבח לוחץ על כפתור, אומר למיקרופון מה מיוחד בה ("השמאלית בלי אגוזים"), ועוזב. אני צריך קולות של אנשים שונים כדי לבדוק שהמערכת מבינה. יש כאן <span id="count">34</span> מצבים קצרים, בערך עשר דקות.</p>
     <ol>
       <li>כותבים שם <b>באנגלית</b> (למשל dana) ובוחרים איפה אתם: <b>בשקט</b> או <b>במקום רועש</b>.</li>
       <li>לוחצים <b>התחל</b> ומאשרים את המיקרופון. מחזיקים את הטלפון בערך 20 ס״מ מהפה.</li>
@@ -143,9 +143,13 @@ audio { width: 100%; margin-top: 6px; }
 "use strict";
 const SELFTEST = new URLSearchParams(location.search).has("selftest");
 const KIND = { short: "קצר", position: "מיקום", allergy: "אלרגיה", two: "שני שינויים", correction: "תיקון",
-               nickname: "כינוי", multi: "כמה מנות", nothing: "בלי שינוי" };
+               nickname: "כינוי", multi: "כמה מנות", nothing: "בלי שינוי", free: "חופשי" };
 const $ = id => document.getElementById(id);
-const S = window.SITUATIONS;
+// ?set=free opens the free-speech set (41-52, 14 Oct); the default page keeps 1-34
+const FREE = new URLSearchParams(location.search).get("set") === "free";
+const PART = FREE ? ":free" : "";
+const S = window.SITUATIONS.filter(s => (s.kind === "free") === FREE);
+document.getElementById("count").textContent = S.length;
 
 let root = null, folder = null;          // on a computer: the chosen folder and the person's sub-folder
 let ctx = null, grabbing = false, chunks = [], t0 = 0, tick = null, lastUrl = null;
@@ -203,9 +207,9 @@ $("start").onclick = async () => {
   try { await openAudio(); } catch (e) { setStatus("אין גישה למיקרופון. צריך לאשר אותו בדפדפן ולנסות שוב. (" + e.message + ")"); return; }
   if (root) folder = await root.getDirectoryHandle(speaker(), { create: true });
   try {
-    takes = (await idb.all()).filter(t => t.speaker === speaker() && t.cond === cond()).sort((a, b) => a.at < b.at ? -1 : 1);
+    takes = (await idb.all()).filter(t => t.speaker === speaker() && t.cond === cond() && S.some(s => s.n === t.n)).sort((a, b) => a.at < b.at ? -1 : 1);
   } catch { takes = []; }
-  idx = Math.min(store.get(`checker-rec:${speaker()}:${cond()}`) || 0, S.length - 1);
+  idx = Math.min(store.get(`checker-rec:${speaker()}:${cond()}${PART}`) || 0, S.length - 1);
   $("setup").querySelectorAll("input, select, button").forEach(el => el.disabled = true);
   $("about").open = false;
   setStatus(`${speaker()} · ${cond() === "noise" ? "במקום רועש" : "בשקט"} · ${micLabel()}` + (SELFTEST ? " · בדיקה עצמית, בלי מיקרופון" : ""));
@@ -252,7 +256,7 @@ async function openAudio() {
 // ---- the situation on screen ---------------------------------------------------------------------
 function show() {
   const s = S[idx], n = doneCount(s.n), recorded = S.filter(x => doneCount(x.n)).length;
-  $("num").textContent = `מצב ${s.n} מתוך ${S.length}`;
+  $("num").textContent = `מצב ${idx + 1} מתוך ${S.length}`;   // = s.n on the main set
   $("progress").textContent = `· הוקלטו ${recorded}`;
   $("kind").textContent = KIND[s.kind] || s.kind;
   $("kind").className = "kind" + (s.kind === "allergy" ? " allergy" : "");
@@ -274,19 +278,19 @@ function show() {
   $("dots").innerHTML = "";
   S.forEach((x, i) => {
     const d = document.createElement("span");
-    d.className = (doneCount(x.n) ? "done " : "") + (i === idx ? "cur" : ""); d.dataset.i = i; d.textContent = x.n;
+    d.className = (doneCount(x.n) ? "done " : "") + (i === idx ? "cur" : ""); d.dataset.i = i; d.textContent = i + 1;
     $("dots").append(d);
   });
   $("sendCard").hidden = false;                           // always in view: stopping half way and sending is fine
   $("send").disabled = !takes.length;
   $("send").textContent = `שליחה לאיתי · ${recorded} מתוך ${S.length}`;
-  store.set(`checker-rec:${speaker()}:${cond()}`, idx);
+  store.set(`checker-rec:${speaker()}:${cond()}${PART}`, idx);
 }
 $("dots").onclick = e => { const i = e.target.dataset && e.target.dataset.i; if (i !== undefined && !grabbing) { idx = +i; show(); } };
 $("prev").onclick = () => { if (idx > 0) { idx--; show(); } };
 $("next").onclick = () => {
   if (idx < S.length - 1) { idx++; show(); return; }
-  const left = S.filter(s => !doneCount(s.n)).map(s => s.n);
+  const left = S.map((s, i) => doneCount(s.n) ? 0 : i + 1).filter(Boolean);
   $("saved").textContent = left.length ? `חסרים עוד: ${left.join(", ")}` : `סיימתם את כל ${S.length} המצבים. תודה! עכשיו לוחצים שליחה לאיתי.`;
   $("saved").className = "saved" + (left.length ? " err" : "");
 };
@@ -326,7 +330,7 @@ async function release() {
     if (advance) idx++;
     show();
     const allDone = S.every(x => doneCount(x.n));
-    $("saved").textContent = (advance ? `✓ מצב ${s.n} נשמר · ${seconds.toFixed(1)} שנ׳. להקליט אותו שוב: הקודם`
+    $("saved").textContent = (advance ? `✓ מצב ${at + 1} נשמר · ${seconds.toFixed(1)} שנ׳. להקליט אותו שוב: הקודם`
       : allDone ? `סיימתם את כל ${S.length} המצבים. תודה! עכשיו לוחצים שליחה לאיתי.`
       : `נשמר · ${seconds.toFixed(1)} שנ׳` + (seconds <= 1 ? " · קצר מאוד, אפשר להקליט שוב" : ""))
       + (kept ? "" : " · לא לסגור את הדף לפני השליחה");
@@ -369,7 +373,7 @@ function logBlob() {
 
 // ---- sending: one .zip with every take and the log -----------------------------------------------
 $("send").onclick = async () => {
-  const name = `${speaker()}_${cond()}.zip`;
+  const name = `${speaker()}_${cond()}${FREE ? "_free" : ""}.zip`;
   const zip = new File([await makeZip([...takes.map(t => ({ name: t.file, blob: t.blob })),
                                        { name: `${speaker()}_${cond()}_log.json`, blob: logBlob() }])],
                        name, { type: "application/zip" });
